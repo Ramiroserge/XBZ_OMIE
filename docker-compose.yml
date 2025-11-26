@@ -1,0 +1,14 @@
+# docker-compose.yml
+services:
+  product-sync:
+    build: .
+    volumes:
+      - .:/app
+    command: python -m app.main
+    environment:
+      - XBZ_TOKEN=${XBZ_TOKEN}
+      - CNPJ=${CNPJ}
+      - OMIE_APP_KEY=${OMIE_APP_KEY}
+      - OMIE_APP_SECRET=${OMIE_APP_SECRET}
+    env_file:
+      - .env
