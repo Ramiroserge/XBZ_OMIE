@@ -33,6 +33,8 @@ jobs:
           pip install -r requirements.txt
       
       - name: Run product sync
+        id: sync
+        continue-on-error: true
         env:
           XBZ_TOKEN: ${{ secrets.XBZ_TOKEN }}
           XBZ_CNPJ: ${{ secrets.XBZ_CNPJ }}
@@ -41,13 +43,21 @@ jobs:
         run: |
           python -m app.main
       
-      - name: Upload sync logs
+      - name: Upload sync logs and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sync-logs-${{ github.run_number }}
           path: |
             logs/
-            *.csv
+            *_products.csv
+            skipped_products.csv
+            failed_products.csv
           retention-days: 30
+      
+      - name: Check sync status
+        if: steps.sync.outcome == 'failure'
+        run: |
+          echo "⚠️ Sync completed with errors. Check the artifacts for details."
+          exit 0
 

@@ -57,37 +57,65 @@ class OmieClient:
 
         return all_products
 
-    def insert_product(self, product_data):
+    def insert_product(self, product_data, max_retries=3):
         payload = {
             "call": "IncluirProduto",
             "app_key": self.app_key,
             "app_secret": self.app_secret,
             "param": [product_data],
         }
-        response = requests.post(self.endpoint, json=payload)
-        data = response.json()
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(self.endpoint, json=payload, timeout=30)
+                data = response.json()
 
-        if "faultcode" in data:
-            fault = data.get("faultcode")
-            message = data.get("faultstring", "Erro desconhecido")
-            
-            # Handle specific error types
-            if fault == "MISUSE_API_PROCESS":
-                print("📬 OMIE Response:", data)
-                print("🚫 OMIE API bloqueada. Encerrando sincronização.")
-                exit(1)
-            elif fault == "SOAP-ENV:Client-102":
-                # Product already exists - this is expected, not an error
-                print(f"⏭️ Produto já existe na OMIE (será pulado)")
-                return {"status": "skipped", "reason": "already_exists", "message": message}
-            else:
-                # Other errors - stop execution
-                print(f"📬 OMIE Response: {data}")
-                print(f"🚫 Erro crítico da OMIE ({fault}): {message}")
-                print("⚠️ Encerrando sincronização por erro crítico.")
-                exit(1)
+                if "faultcode" in data:
+                    fault = data.get("faultcode")
+                    message = data.get("faultstring", "Erro desconhecido")
+                    
+                    # Handle specific error types
+                    if fault == "MISUSE_API_PROCESS":
+                        print("📬 OMIE Response:", data)
+                        print("🚫 OMIE API bloqueada. Encerrando sincronização.")
+                        exit(1)
+                    elif fault == "SOAP-ENV:Client-102":
+                        # Product already exists - this is expected, not an error
+                        print(f"⏭️ Produto já existe na OMIE (será pulado)")
+                        return {"status": "skipped", "reason": "already_exists", "message": message}
+                    elif fault == "SOAP-ENV:Server":
+                        # Server-side error - retry
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                            print(f"⚠️ Erro temporário do servidor OMIE. Tentativa {attempt + 1}/{max_retries}. Aguardando {wait_time}s...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            # Max retries reached - skip this product
+                            print(f"⚠️ Falha após {max_retries} tentativas. Pulando produto.")
+                            return {"status": "error", "reason": "server_error", "message": message, "fault": fault}
+                    else:
+                        # Other client errors - skip and continue
+                        print(f"⚠️ Erro da OMIE ({fault}): {message}")
+                        return {"status": "error", "reason": "client_error", "message": message, "fault": fault}
 
-        return data
+                return data
+                
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    print(f"⏱️ Timeout ao conectar com OMIE. Tentativa {attempt + 1}/{max_retries}. Aguardando {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"⚠️ Timeout após {max_retries} tentativas. Pulando produto.")
+                    return {"status": "error", "reason": "timeout", "message": "Request timeout"}
+                    
+            except Exception as e:
+                print(f"⚠️ Erro inesperado ao inserir produto: {e}")
+                return {"status": "error", "reason": "exception", "message": str(e)}
+        
+        return {"status": "error", "reason": "max_retries_exceeded"}
 
     def atualizar_produtos_existentes(self, produtos: list):
         for produto in produtos:
