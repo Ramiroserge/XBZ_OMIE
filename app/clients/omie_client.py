@@ -26,19 +26,34 @@ class OmieClient:
                 ]
             }
 
-            response = requests.post(self.endpoint, json=payload)
-            data = response.json()
+            try:
+                response = requests.post(self.endpoint, json=payload)
+                response.raise_for_status()
+                data = response.json()
 
-            if "faultcode" in data:
-                print(f"❌ Erro ao listar produtos (página {page}): {data}")
+                if "faultcode" in data:
+                    print(f"❌ Erro ao listar produtos (página {page}): {data}")
+                    break
+
+                # Check for product_list_result structure
+                produto_servico_cadastro = data.get("produto_servico_cadastro", [])
+                if not produto_servico_cadastro:
+                    break
+
+                all_products.extend(produto_servico_cadastro)
+                print(f"📄 Página {page}: {len(produto_servico_cadastro)} produtos carregados...")
+                
+                # Check if there are more pages
+                total_paginas = data.get("total_de_paginas", 0)
+                if page >= total_paginas:
+                    break
+                    
+                page += 1
+                time.sleep(0.5)  # Rate limit prevention
+
+            except Exception as e:
+                print(f"❌ Erro ao buscar produtos da página {page}: {e}")
                 break
-
-            produtos = data.get("produtos", [])
-            if not produtos:
-                break
-
-            all_products.extend(produtos)
-            page += 1
 
         return all_products
 
@@ -55,13 +70,22 @@ class OmieClient:
         if "faultcode" in data:
             fault = data.get("faultcode")
             message = data.get("faultstring", "Erro desconhecido")
-            print(f"📬 OMIE Response: {data}")
+            
+            # Handle specific error types
             if fault == "MISUSE_API_PROCESS":
+                print("📬 OMIE Response:", data)
                 print("🚫 OMIE API bloqueada. Encerrando sincronização.")
-                exit(0)
+                exit(1)
+            elif fault == "SOAP-ENV:Client-102":
+                # Product already exists - this is expected, not an error
+                print(f"⏭️ Produto já existe na OMIE (será pulado)")
+                return {"status": "skipped", "reason": "already_exists", "message": message}
             else:
-                print(f"🚫 Error from OMIE ({fault}): {message}")
-                exit(0)
+                # Other errors - stop execution
+                print(f"📬 OMIE Response: {data}")
+                print(f"🚫 Erro crítico da OMIE ({fault}): {message}")
+                print("⚠️ Encerrando sincronização por erro crítico.")
+                exit(1)
 
         return data
 
