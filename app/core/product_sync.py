@@ -18,7 +18,7 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
     if xbz_products:
         salvar_produtos_xbz_csv(xbz_products, "produtos_xbz.csv")
 
-    """print("📦 Buscando produtos da OMIE...")
+    print("📦 Buscando produtos da OMIE...")
     omie_products = omie_client.list_products()
     existing_codes = set(
         p.get("codigo_produto_integracao")
@@ -44,7 +44,7 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
             response = omie_client.insert_product(omie_payload)
             print("📬 OMIE Response:", response)
 
-        time.sleep(1.1)  # Para evitar o rate limit"""
+        time.sleep(1.1)  # Para evitar o rate limit
 
 def salvar_produtos_xbz_csv(produtos, nome_arquivo="produtos_xbz.csv"):
     caminho_arquivo = os.path.join(os.getcwd(), nome_arquivo)
