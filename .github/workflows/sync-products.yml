@@ -15,9 +15,9 @@ on:
         default: '500'
   
   # Run on push to main branch (optional)
-  push:
-    branches:
-      - main
+  #push:
+  #  branches:
+  #    - main
 
 jobs:
   sync:
