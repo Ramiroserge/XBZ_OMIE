@@ -4,7 +4,7 @@ on:
   # Run every 3 hours - syncs up to 500 products per run to avoid OMIE rate limits
   # With 8 runs/day × 500 products = 4000 new products can be synced daily
   schedule:
-    - cron: '0 */3 * * *'
+    # - cron: '0 */3 * * *'
   
   # Allow manual trigger
   workflow_dispatch:
@@ -60,4 +60,5 @@ jobs:
             skipped_products.csv
             failed_products.csv
           retention-days: 30
+
 
