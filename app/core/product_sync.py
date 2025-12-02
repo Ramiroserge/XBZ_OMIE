@@ -6,8 +6,13 @@ from app.mappings.mapping import map_product
 import csv
 import os
 
+# Maximum number of products to INSERT per workflow run
+# This prevents hitting OMIE's rate limits
+# With 3-hour intervals and ~500 products per run, we can sync ~4000 new products/day
+MAX_INSERTS_PER_RUN = 500
 
-def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, preview_count=None):
+
+def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, preview_count=None, max_inserts=None):
     xbz_client = XBZClient(token=token, cnpj=cnpj)
     omie_client = OmieClient(app_key=omie_app_key, app_secret=omie_app_secret)
     skipped_products = []
@@ -15,6 +20,10 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
     inserted_count = 0
     skipped_count = 0
     failed_count = 0
+    rate_limited = False
+    
+    # Use provided max_inserts or default
+    max_inserts_limit = max_inserts if max_inserts is not None else MAX_INSERTS_PER_RUN
 
     print("📦 Buscando produtos da XBZ...")
     xbz_products = xbz_client.get_products()
@@ -30,6 +39,14 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
         if p.get("codigo_produto_integracao")
     )
     print(f"✅ {len(existing_codes)} produtos carregados da OMIE.\n")
+    
+    # Count how many products need to be inserted
+    products_to_insert = [p for p in xbz_products if p.get("CodigoComposto") not in existing_codes]
+    print(f"📊 Produtos novos para inserir: {len(products_to_insert)}")
+    print(f"📊 Limite de inserções por execução: {max_inserts_limit}")
+    if len(products_to_insert) > max_inserts_limit:
+        print(f"⚠️ Serão inseridos até {max_inserts_limit} produtos nesta execução.")
+        print(f"💡 Os demais serão inseridos nas próximas execuções.\n")
 
     if preview_count is not None:
         print(f"⚠️ Modo preview: processando apenas {preview_count} produtos.\n")
@@ -47,6 +64,11 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
                 "motivo": "já existe na OMIE (verificado localmente)"
             })
             continue
+        
+        # Check if we've reached the insert limit
+        if inserted_count >= max_inserts_limit:
+            print(f"⏸️ Limite de {max_inserts_limit} inserções atingido. Continuará na próxima execução.")
+            break
 
         omie_payload = map_product(product)
         print("🧾 OMIE Payload:", json.dumps(omie_payload, indent=2, ensure_ascii=False))
@@ -54,11 +76,22 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
         if not dry_run:
             response = omie_client.insert_product(omie_payload)
             
+            # Check if we got rate limited
+            if response is None:
+                # Rate limited - exit gracefully
+                print("⏸️ API bloqueada. Salvando progresso e encerrando.")
+                rate_limited = True
+                break
+            
             # Check response status
             if isinstance(response, dict):
                 status = response.get("status")
                 
-                if status == "skipped":
+                if status == "rate_limited":
+                    print("⏸️ API bloqueada. Salvando progresso e encerrando.")
+                    rate_limited = True
+                    break
+                elif status == "skipped":
                     print(f"⏭️ Produto {codigo} já existe na OMIE (confirmado pela API)")
                     skipped_count += 1
                     skipped_products.append({
@@ -91,10 +124,15 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
     print("\n" + "="*60)
     print("📊 RESUMO DA SINCRONIZAÇÃO")
     print("="*60)
-    print(f"📦 Total de produtos XBZ processados: {len(xbz_products)}")
-    print(f"✅ Produtos inseridos: {inserted_count}")
-    print(f"⏭️ Produtos pulados: {skipped_count}")
+    print(f"📦 Total de produtos XBZ: {len(xbz_products)}")
+    print(f"✅ Produtos inseridos nesta execução: {inserted_count}")
+    print(f"⏭️ Produtos pulados (já existem): {skipped_count}")
     print(f"❌ Produtos com erro: {failed_count}")
+    remaining = len(products_to_insert) - inserted_count
+    if remaining > 0:
+        print(f"⏳ Produtos restantes para próximas execuções: {remaining}")
+    if rate_limited:
+        print(f"⚠️ Execução interrompida por rate limit. Continuará na próxima execução.")
     print("="*60)
     
     # Save logs
@@ -106,6 +144,11 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
         save_failed_products(failed_products, "failed_products.csv")
         print(f"📝 Log de produtos com erro salvo em 'failed_products.csv'")
         print(f"💡 Você pode tentar sincronizar novamente esses produtos mais tarde.")
+    
+    # Exit gracefully even if rate limited - we saved progress
+    # The next run will pick up where we left off
+    if rate_limited:
+        print(f"\n✅ Progresso salvo. A sincronização continuará na próxima execução agendada.")
 
 def salvar_produtos_xbz_csv(produtos, nome_arquivo="produtos_xbz.csv"):
     caminho_arquivo = os.path.join(os.getcwd(), nome_arquivo)

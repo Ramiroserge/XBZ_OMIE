@@ -77,8 +77,9 @@ class OmieClient:
                     # Handle specific error types
                     if fault == "MISUSE_API_PROCESS":
                         print("📬 OMIE Response:", data)
-                        print("🚫 OMIE API bloqueada. Encerrando sincronização.")
-                        exit(1)
+                        print("⚠️ OMIE API bloqueada por rate limit.")
+                        # Return a special status so the sync can save progress and exit gracefully
+                        return {"status": "rate_limited", "reason": "api_blocked", "message": message}
                     elif fault == "SOAP-ENV:Client-102":
                         # Product already exists - this is expected, not an error
                         print(f"⏭️ Produto já existe na OMIE (será pulado)")

@@ -1,12 +1,18 @@
 name: Sync Products from XBZ to OMIE
 
 on:
-  # Run every 3 hours
+  # Run every 3 hours - syncs up to 500 products per run to avoid OMIE rate limits
+  # With 8 runs/day × 500 products = 4000 new products can be synced daily
   schedule:
     - cron: '0 */3 * * *'
   
   # Allow manual trigger
   workflow_dispatch:
+    inputs:
+      max_inserts:
+        description: 'Maximum products to insert (default: 500)'
+        required: false
+        default: '500'
   
   # Run on push to main branch (optional)
   push:
@@ -34,12 +40,12 @@ jobs:
       
       - name: Run product sync
         id: sync
-        continue-on-error: true
         env:
           XBZ_TOKEN: ${{ secrets.XBZ_TOKEN }}
           XBZ_CNPJ: ${{ secrets.XBZ_CNPJ }}
           OMIE_APP_KEY: ${{ secrets.OMIE_APP_KEY }}
           OMIE_APP_SECRET: ${{ secrets.OMIE_APP_SECRET }}
+          MAX_INSERTS_PER_RUN: ${{ github.event.inputs.max_inserts || '500' }}
         run: |
           python -m app.main
       
@@ -54,10 +60,4 @@ jobs:
             skipped_products.csv
             failed_products.csv
           retention-days: 30
-      
-      - name: Check sync status
-        if: steps.sync.outcome == 'failure'
-        run: |
-          echo "⚠️ Sync completed with errors. Check the artifacts for details."
-          exit 0
 
