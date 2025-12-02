@@ -6,6 +6,25 @@ class OmieClient:
         self.app_key = app_key
         self.app_secret = app_secret
         self.endpoint = "https://app.omie.com.br/api/v1/geral/produtos/"
+    
+    def check_api_status(self):
+        """Quick check if the API is available (not rate limited)."""
+        payload = {
+            "call": "ListarProdutos",
+            "app_key": self.app_key,
+            "app_secret": self.app_secret,
+            "param": [{"pagina": 1, "registros_por_pagina": 1}]
+        }
+        try:
+            response = requests.post(self.endpoint, json=payload, timeout=10)
+            data = response.json()
+            if data.get("faultcode") == "MISUSE_API_PROCESS":
+                # Extract wait time from message if available
+                message = data.get("faultstring", "")
+                return {"available": False, "message": message}
+            return {"available": True}
+        except Exception as e:
+            return {"available": False, "message": str(e)}
 
     def list_products(self):
         all_products = []

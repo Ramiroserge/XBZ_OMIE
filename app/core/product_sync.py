@@ -43,6 +43,34 @@ def sync_products(token, cnpj, omie_app_key, omie_app_secret, dry_run=False, pre
     # Count how many products need to be inserted
     products_to_insert = [p for p in xbz_products if p.get("CodigoComposto") not in existing_codes]
     print(f"📊 Produtos novos para inserir: {len(products_to_insert)}")
+    
+    # If there are products to insert, check if API is available first
+    if len(products_to_insert) > 0:
+        print("🔍 Verificando disponibilidade da API OMIE...")
+        api_status = omie_client.check_api_status()
+        if not api_status.get("available"):
+            print(f"⚠️ API OMIE bloqueada: {api_status.get('message', 'Rate limit ativo')}")
+            print(f"💡 Aguarde o desbloqueio e tente novamente na próxima execução.")
+            print("\n" + "="*60)
+            print("📊 RESUMO DA SINCRONIZAÇÃO")
+            print("="*60)
+            print(f"📦 Total de produtos XBZ: {len(xbz_products)}")
+            print(f"✅ Produtos já sincronizados: {len(existing_codes)}")
+            print(f"⏳ Produtos aguardando sincronização: {len(products_to_insert)}")
+            print(f"⚠️ Nenhuma inserção realizada - API bloqueada.")
+            print("="*60)
+            return
+        print("✅ API OMIE disponível.\n")
+    else:
+        print("✅ Todos os produtos já estão sincronizados!\n")
+        print("\n" + "="*60)
+        print("📊 RESUMO DA SINCRONIZAÇÃO")
+        print("="*60)
+        print(f"📦 Total de produtos XBZ: {len(xbz_products)}")
+        print(f"✅ Todos os {len(existing_codes)} produtos já estão na OMIE.")
+        print("="*60)
+        return
+    
     print(f"📊 Limite de inserções por execução: {max_inserts_limit}")
     if len(products_to_insert) > max_inserts_limit:
         print(f"⚠️ Serão inseridos até {max_inserts_limit} produtos nesta execução.")
